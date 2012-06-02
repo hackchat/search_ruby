@@ -37,12 +37,18 @@ module Elastic
       @connection = Connection.new(ELASTIC_URL)
     end
 
-    def indicies
-      @indicies ||= []
+    def indices
+      @indices ||= []
+    end
+
+    def index?(type)
+      self.indices.any? do |index|
+        index.type_name == type
+      end
     end
 
     def add_index(type)
-      indices << Index.new(type)
+      self.indices << Index.new(type)
     end
 
     def add_instance(type, info)
