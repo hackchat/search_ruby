@@ -13,10 +13,15 @@ module Elastic
       @index_name = "#{type}_index"
       @type_name = type
       @last = 0
+      add_to_elastic
     end
     
-    def index_url
-      "#{self.index_name}/#{self.type_name}/"
+    def add_to_elastic
+      Connection.new(ELASTIC_URL + index_path).put().inspect
+    end
+
+    def index_path
+      "#{self.index_name}"
     end
 
     def next_instance
@@ -24,7 +29,7 @@ module Elastic
     end
 
     def next_instance_url
-      "#{self.index_url}/#{next_instance}"
+      "#{self.index_path}/#{type_name}/#{next_instance}"
     end
 
   end
@@ -47,13 +52,23 @@ module Elastic
       end
     end
 
+    def find_or_add_index(type)
+      get_index(type) || add_index(type)
+    end
+
+    def get_index(type)
+      self.indices.select { |i| i.type_name == type }.first
+    end
+
     def add_index(type)
-      self.indices << Index.new(type)
+      Index.new(type).tap {|i| self.indices << i }
     end
 
     def add_instance(type, info)
-      index = find_index_by_type(type)
-      self.connection.get index.next_instance_url
+      url = find_or_add_index(type).next_instance_url
+      self.connection.get(url)
+      url =~ /\/(\d+)[\/]?/
+      id = $1
     end
 
     def add_many_instances(type, array_of_instance_info)
@@ -65,8 +80,8 @@ module Elastic
   class Connection
     attr_accessor :connection  
 
-    def initialize(url)
-      self.connection = Faraday.new(ELASTIC_URL)
+    def initialize(url = ELASTIC_URL)
+      self.connection = Faraday.new(url)
     end
 
     def method_missing(method, *args, &block)

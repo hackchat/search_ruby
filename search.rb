@@ -16,6 +16,6 @@ end
 
 post '/new.?:format?' do
   data = JSON.parse request.body.read
-  resp = $database.index? data['type']
-  resp.to_json
+  id = $database.add_instance(data['type'], data['content'])
+  id.to_json
 end
