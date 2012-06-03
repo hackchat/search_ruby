@@ -5,8 +5,6 @@ require './elastic'
 ## Database (with globals for giggles) ##
 
 $database = Elastic::Database.instance
-$database.add_index "user"
-puts $database.indices
 
 ## ROUTING ##
 
@@ -14,8 +12,8 @@ get '/' do
   'Hello World'
 end
 
-post '/new.?:format?' do
+post '/:type/new' do
   data = JSON.parse request.body.read
-  id = $database.add_instance(data['type'], data['content'])
-  id.to_json
+  resp = $database.add_instance(params[:type], data['content'])
+  resp.to_json
 end

@@ -3,33 +3,34 @@ require 'json'
 require 'faraday'
 
 module Elastic
-  ELASTIC_URL = "http://localhost:9200/"
+  ELASTIC_URL = "http://localhost:9200"
 
 
   class Index
     attr_reader :index_name, :type_name, :last
 
     def initialize(type)
-      @index_name = "#{type}_index"
+      @index_name = "#{type}-index"
       @type_name = type
       @last = 0
       add_to_elastic
     end
     
     def add_to_elastic
-      Connection.new(ELASTIC_URL + index_path).put().inspect
+      index_url = URI.parse "#{ELASTIC_URL}#{index_path}/"
+      Connection.new(index_url).put()
     end
 
     def index_path
-      "#{self.index_name}"
+      "/#{self.index_name}"
     end
 
-    def next_instance
-      @last += 1
+    def search_path
+      "#{type_path}/_search/"
     end
 
-    def next_instance_url
-      "#{self.index_path}/#{type_name}/#{next_instance}"
+    def type_path
+      "#{self.index_path}/#{type_name}/"
     end
 
   end
@@ -43,32 +44,26 @@ module Elastic
     end
 
     def indices
-      @indices ||= []
+      @indices ||= {}
     end
 
     def index?(type)
-      self.indices.any? do |index|
-        index.type_name == type
-      end
-    end
-
-    def find_or_add_index(type)
-      get_index(type) || add_index(type)
+      not indices[type].nil?
     end
 
     def get_index(type)
-      self.indices.select { |i| i.type_name == type }.first
+      self.indices[type] ||= Index.new(type)
     end
 
-    def add_index(type)
-      Index.new(type).tap {|i| self.indices << i }
+    alias :add_index :get_index
+
+    def send_query(query)
+      query.perform_query
     end
 
     def add_instance(type, info)
-      url = find_or_add_index(type).next_instance_url
-      self.connection.get(url)
-      url =~ /\/(\d+)[\/]?/
-      id = $1
+      url = self.get_index(type).type_path
+      self.connection.post(url, info.to_json).inspect
     end
 
     def add_many_instances(type, array_of_instance_info)
@@ -78,7 +73,7 @@ module Elastic
   end
 
   class Connection
-    attr_accessor :connection  
+    attr_accessor :connection
 
     def initialize(url = ELASTIC_URL)
       self.connection = Faraday.new(url)
@@ -90,4 +85,76 @@ module Elastic
 
   end
 
+  class Query
+    attr_accessor :index, :database
+
+    def initialize(type)
+      self.database = Elastic::Database.instance
+      raise(ArgumentError, "Index '#{type}' not found") unless
+      self.index = self.database.get_index(type)
+    end
+
+    def path
+      self.index.search_path
+    end
+
+    def terms
+      @terms ||= {}
+    end
+
+    def generate_query
+      JSON.parse(self.to_json)
+    end
+
+    def perform_query
+      response = self.database.connection.get do |request|
+        request.url self.path
+        request.headers['Content-Type'] = 'application/json'
+        request.body(self.to_json)
+      end
+      response_to_results_ids_array(response)
+    end
+
+    def response_to_results_ids_array(response)
+      puts "RESPONSE: \n\n #{response.inspect} \n\n"
+      parsed_json = JSON.parse response.env[:body]
+      puts parsed_json
+      parsed_json["hits"]["hits"].inject([]) do |ids, hit|
+        source = hit["_source"]
+        ids << source["db_id"] if source["db_id"]
+        ids
+      end
+    end
+
+    def terms_to_json
+      terms_array = self.terms.keys.inject([]) do |terms_array, field|
+        value = self.terms[field]
+        terms_array.tap do |ary|
+          if value
+            ary << "\"#{field}\": \"#{value}\""
+          end 
+        end
+      end
+
+      "{ #{terms_array.join ','} }"
+    end
+
+    def to_json
+      "{ \"queryb\" : #{self.terms_to_json} }"
+    end
+
+  end
+
 end
+
+
+
+
+
+
+
+
+
+
+
+
