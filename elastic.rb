@@ -2,6 +2,9 @@ require 'singleton'
 require 'json'
 require 'faraday'
 
+## Always use puma. Why not, dawg?
+configure { set :server, :puma }
+
 module Elastic
   ELASTIC_URL = "http://localhost:9200"
 
